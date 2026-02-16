@@ -2533,36 +2533,79 @@ const o=()=>{s.innerHTML=`\n    <div class="trade-head"><button class="trade-bac
   
   // Remote logout enforcement: if session key is deleted/changed in DB, log this device out automatically.
   (function bindRemoteLogoutWatcher(){
+    // IMPORTANT: $db.onValue can briefly return null on network hiccups or transient query errors.
+    // We must NOT force logout on the first null snapshot.
     try{
       const s = getSessionObj();
       if(!s) return;
       const username = s.username || s.name || s.user || "";
       if(!username) return;
       if(!window.$db || !window.$db.onValue || !window.$db.ref) return;
-      const localTok = (function(){ try{return localStorage.getItem("taif:session_token")||"";}catch(_){return"";} })();
+
+      // Debounce/confirm logic
+      let lastNonNullAt = 0;
+      let nullStreak = 0;
+      let lastTokenSeen = "";
+      let armed = false; // becomes true once we have seen a valid session at least once
+
+      function readLocalTok(){
+        try{ return localStorage.getItem("taif:session_token")||""; }catch(_){ return ""; }
+      }
+      function hardLogout(msg){
+        try{ localStorage.removeItem("taif:session"); }catch(_){}
+        try{ localStorage.removeItem("taif:session_token"); }catch(_){}
+        try{ if(msg) alert(msg); }catch(_){}
+        try{ location.reload(); }catch(_){}
+      }
+
       window.$db.onValue(window.$db.ref("taif/session/"+username), function(snap){
         try{
           const v = snap && snap.val ? snap.val() : null;
-          // if session removed => force logout
-          if(!v){
-            try{ localStorage.removeItem("taif:session"); }catch(_){}
-            try{ localStorage.removeItem("taif:session_token"); }catch(_){}
-            try{ alert("تم تسجيل خروجك لأن الجلسة أُغلقت من جهاز آخر."); }catch(_){}
-            try{ location.reload(); }catch(_){}
+
+          // If offline, ignore any nulls (they are expected)
+          if(typeof navigator !== "undefined" && navigator && navigator.onLine === false){
             return;
           }
-          // if token mismatch => someone logged in elsewhere
-          if(localTok && v && v.token && String(v.token)!==String(localTok)){
-            try{ localStorage.removeItem("taif:session"); }catch(_){}
-            try{ localStorage.removeItem("taif:session_token"); }catch(_){}
-            try{ alert("تم تسجيل دخول هذا الحساب على جهاز آخر. سيتم تسجيل خروجك الآن."); }catch(_){}
-            try{ location.reload(); }catch(_){}
+
+          if(!v){
+            // Only enforce if we've previously seen a valid session and we receive consecutive nulls.
+            if(!armed) return;
+
+            nullStreak++;
+            // Wait for 3 consecutive nulls (≈ 6–10s depending on polling) before forcing logout.
+            if(nullStreak < 3) return;
+
+            // Final safety: if we saw a valid session very recently, assume transient and reset.
+            if(lastNonNullAt && (Date.now() - lastNonNullAt) < 12000){
+              nullStreak = 0;
+              return;
+            }
+
+            hardLogout("تم تسجيل خروجك لأن الجلسة أُغلقت من جهاز آخر أو تم حذف الحساب.");
+            return;
           }
+
+          // We have a session object
+          armed = true;
+          nullStreak = 0;
+          lastNonNullAt = Date.now();
+
+          // Detect token mismatch => logged in elsewhere
+          const localTok = readLocalTok();
+          const remoteTok = (v && v.token!=null) ? String(v.token) : "";
+          if(remoteTok) lastTokenSeen = remoteTok;
+
+          if(localTok && remoteTok && remoteTok !== String(localTok)){
+            hardLogout("تم تسجيل دخول هذا الحساب على جهاز آخر. سيتم تسجيل خروجك الآن.");
+            return;
+          }
+
+          // Optional: if remote token disappears unexpectedly but we still have local token, don't logout.
+          // Some backends may omit fields briefly during replication.
         }catch(_){}
       });
     }catch(_){}
   })();
-
 document.addEventListener("click", function(ev){
     try{
       if(ev.defaultPrevented) return;
