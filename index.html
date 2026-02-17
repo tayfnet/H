@@ -216,85 +216,43 @@
 
 <script id="branch-seed-data-v10">
 (function(){
-  function safeParse(s){ try{return JSON.parse(s)}catch(_){return null} }
-  function isValidList(v){ return Array.isArray(v) && v.length>0 && v.some(x=>x && x.code); }
-  function defaultList(){
-    return [
-      {code:"USD",name:"الدولار الأمريكي",flag:"🇺🇸",icon:"USD",ratioBuy:1,ratioSell:1,method:"multiply",buy:15000,sell:15200,decimals:0},
-      {code:"EUR",name:"اليورو",flag:"🇪🇺",icon:"EUR",ratioBuy:1.08,ratioSell:1.08,method:"multiply",decimals:2},
-      {code:"SAR",name:"الريال السعودي",flag:"🇸🇦",icon:"SAR",ratioBuy:0.266,ratioSell:0.266,method:"multiply",decimals:2},
-      {code:"TRY",name:"الليرة التركية",flag:"🇹🇷",icon:"TRY",ratioBuy:0.032,ratioSell:0.032,method:"multiply",decimals:2},
-      {code:"AED",name:"الدرهم الإماراتي",flag:"🇦🇪",icon:"AED",ratioBuy:0.272,ratioSell:0.272,method:"multiply",decimals:2},
-      {code:"JOD",name:"الدينار الأردني",flag:"🇯🇴",icon:"JOD",ratioBuy:1.41,ratioSell:1.41,method:"multiply",decimals:2}
-    ];
+  // IMPORTANT (Stable Fix):
+  // كان هذا السكربت يقوم بتهيئة بيانات افتراضية ويكتبها تلقائياً على قاعدة البيانات،
+  // وهذا قد يؤدي إلى رجوع الأسعار/الإعدادات إلى الافتراضي عند مسح LocalStorage أو تشغيل جهاز جديد.
+  //
+  // تم تحويله إلى "قراءة فقط" بحيث لا يكتب أي افتراضي على Supabase.
+  // تهيئة الافتراضي (فقط عند عدم وجود بيانات في DB) أصبحت ضمن سكربت branch-default-seed-v1 الآمن.
+
+  function safeParse(s){
+    try{ return JSON.parse(s||"null"); }catch(_){ return null; }
   }
-  function seed(){
+
+  // Sync local currency order/edits to Supabase only when app fires taif:data-updated
+  (function(){
     try{
-      var cur = safeParse(localStorage.getItem("taif:data"));
-      if(isValidList(cur)) return;
+      var __lastPush = null;
+      try{ __lastPush = JSON.stringify(safeParse(localStorage.getItem("taif:data"))||null); }catch(_){ }
 
-      var legacy = null;
-      try{
-        var c = safeParse(localStorage.getItem("taif:cache"));
-        if(c && isValidList(c.data)) legacy = c.data;
-      }catch(_){}
-
-      var list = legacy || defaultList();
-      localStorage.setItem("taif:data", JSON.stringify(list));
-
-      try{
-        var cache = safeParse(localStorage.getItem("taif:cache")) || {};
-        cache.data = list;
-        localStorage.setItem("taif:cache", JSON.stringify(cache));
-      }catch(_){}
-
-      try{
-        if(window.$db && window.$db.set && window.$db.ref){
+      window.__taif_syncDataToFirebase = window.__taif_syncDataToFirebase || function(){
+        try{
+          if(!(window.$db && window.$db.set && window.$db.ref)) return;
+          var list = safeParse(localStorage.getItem("taif:data"));
+          if(!Array.isArray(list) || !list.length) return;
+          var s = "";
+          try{ s = JSON.stringify(list); }catch(_){ }
+          if(s && s === __lastPush) return;
+          __lastPush = s;
           window.$db.set(window.$db.ref("taif/data"), list);
-        }
-      }catch(_){}
+        }catch(_){ }
+      };
 
-      try{
-        var wrap=document.createElement('div');
-        wrap.setAttribute('dir','rtl');
-        wrap.style.cssText="position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483647";
-        var b=document.createElement('div');
-        b.textContent="✅ تم تهيئة بيانات العملات للفرع تلقائياً";
-        b.style.cssText="background:rgba(17,24,39,.95);color:#fff;border-radius:14px;padding:10px 16px;font:800 14px/1.3 system-ui,Segoe UI,Roboto,Tahoma;box-shadow:0 8px 24px rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.08);max-width:92vw;text-align:center";
-        wrap.appendChild(b); document.body.appendChild(wrap);
-        setTimeout(function(){ b.style.opacity="0"; b.style.transition="opacity .45s ease"; }, 1200);
-        setTimeout(function(){ try{wrap.remove()}catch(_){} }, 2000);
-      }catch(_){}
-    }catch(_){}
-  }
-  try{ seed(); }catch(_){}
-  
-// Sync local currency order/edits to Firebase so all modules (trade dropdowns) follow the same order.
-(function(){
-  try{
-    var __lastPush = null;
-    try{ __lastPush = JSON.stringify(safeParse(localStorage.getItem("taif:data"))||null); }catch(_){}
-    window.__taif_syncDataToFirebase = window.__taif_syncDataToFirebase || function(){
-      try{
-        if(!(window.$db && window.$db.set && window.$db.ref)) return;
-        var list = safeParse(localStorage.getItem("taif:data"));
-        if(!Array.isArray(list) || !list.length) return;
-        var s = "";
-        try{ s = JSON.stringify(list); }catch(_){}
-        if(s && s === __lastPush) return;
-        __lastPush = s;
-        window.$db.set(window.$db.ref("taif/data"), list);
-      }catch(_){}
-    };
-    window.addEventListener("taif:data-updated", function(){
-      try{ window.__taif_syncDataToFirebase(); }catch(_){}
-    });
-  }catch(_){}
-})();
-window.addEventListener("db-ready", function(){ try{ seed(); }catch(_){} });
+      window.addEventListener("taif:data-updated", function(){
+        try{ window.__taif_syncDataToFirebase(); }catch(_){ }
+      });
+    }catch(_){ }
+  })();
 })();
 </script>
-
 <script id="branch-default-seed-v1">
 (function(){
   // Ensure app always has starter data even if DB is empty (especially with branches).
@@ -663,12 +621,13 @@ window.addEventListener("db-ready", function(){ try{ seed(); }catch(_){} });
 
 // Scoped keys
 if(shouldScopeKey(String(logical||""))){
-  // Smart branch seeding:
-  // If branch-scoped key doesn't exist yet, copy template from global taif/<key> once.
+  // Smart branch seeding (SAFE + NO OVERWRITE):
+  // - Never overwrite existing branch data.
+  // - Never seed on transient null (network errors).
+  // - Keep last-known value to avoid UI showing defaults unexpectedly.
   try{
-    var bid2 = getBranchId();
     var templateKey = String(logical||"");
-    // only for core config keys that exist in your initial DB seed
+    // Only for core config keys that exist in your initial DB seed
     var core = (
       templateKey === "taif/data" ||
       templateKey === "taif/banner" ||
@@ -682,33 +641,77 @@ if(shouldScopeKey(String(logical||""))){
       templateKey === "taif/customTheme"
     );
     if(core){
+      try{ window.__TAIF_LAST_GOOD__ = window.__TAIF_LAST_GOOD__ || {}; }catch(_){}
+      try{ window.__TAIF_SEED_DONE__ = window.__TAIF_SEED_DONE__ || {}; }catch(_){}
+      try{ window.__TAIF_SEED_CHECKING__ = window.__TAIF_SEED_CHECKING__ || {}; }catch(_){}
       return origOn(mapped, function(snap){
+        var v = null;
+        try{ v = (snap && snap.val) ? snap.val() : null; }catch(_){ v = null; }
+
+        // Any non-null value is treated as valid (even empty array/object/string/0)
+        if(v !== null && v !== undefined){
+          try{ window.__TAIF_LAST_GOOD__[mapped] = v; }catch(_){}
+          cb && cb(snap);
+          return;
+        }
+
+        // If we have a cached value, keep UI stable (do NOT show defaults)
         try{
-          var v = snap && snap.val ? snap.val() : null;
-          var empty = (v==null) || (Array.isArray(v) && v.length===0) || (typeof v==="object" && !Array.isArray(v) && Object.keys(v||{}).length===0);
-          if(!empty){
-            cb && cb(snap);
-            return;
+          if(window.__TAIF_LAST_GOOD__ && Object.prototype.hasOwnProperty.call(window.__TAIF_LAST_GOOD__, mapped)){
+            var cached = window.__TAIF_LAST_GOOD__[mapped];
+            cb && cb({ val: function(){ return cached; }});
           }
         }catch(_){}
-        // Branch missing: provide fallback from global seed immediately, then write it to branch in background
+
+        // Confirm by direct DB read whether this key truly doesn't exist before seeding.
         (async function(){
           try{
+            if(window.__TAIF_SEED_CHECKING__ && window.__TAIF_SEED_CHECKING__[mapped]) return;
+            try{ window.__TAIF_SEED_CHECKING__[mapped] = true; }catch(_){}
+
             var supa2 = window.__TAIF_SUPA__;
             if(!supa2 && window.supabase && window.supabase.createClient){
-              supa2 = (window.__TAIF_SUPA__ || (window.__TAIF_SUPA__ = window.supabase.createClient(
-                "https://rzabluqawcyhedcvmyut.supabase.co",
-                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YWJsdXFhd2N5aGVkY3ZteXV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExODMxMTQsImV4cCI6MjA4Njc1OTExNH0.EWbcZ4jliSKtlY3rk303EkcUfNDqJhOKDRAP2kxPCxE"
-              )));
-            }
-            var fallback = null;
-            // 1) Try global DB seed: taif/<...>
-            if(supa2 && supa2.from){
               try{
-                var res = await supa2.from("app_state").select("value").eq("key", templateKey).maybeSingle();
-                if(res && res.data && ("value" in res.data)) fallback = res.data.value;
+                supa2 = (window.__TAIF_SUPA__ || (window.__TAIF_SUPA__ = window.supabase.createClient(
+                  "https://rzabluqawcyhedcvmyut.supabase.co",
+                  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YWJsdXFhd2N5aGVkY3ZteXV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExODMxMTQsImV4cCI6MjA4Njc1OTExNH0.EWbcZ4jliSKtlY3rk303EkcUfNDqJhOKDRAP2kxPCxE"
+                )));
               }catch(_){}
             }
+            if(!supa2 || !supa2.from) return;
+
+            // Read the real value (distinguish missing row vs error)
+            var res = null;
+            try{
+              res = await supa2.from("app_state").select("value").eq("key", mapped).maybeSingle();
+            }catch(_){ return; }
+            if(res && res.error){
+              // transient error -> keep cached value (no seed, no overwrite)
+              return;
+            }
+            if(res && res.data && ("value" in res.data)){
+              var actual = res.data.value;
+              if(actual !== null && actual !== undefined){
+                try{ window.__TAIF_LAST_GOOD__[mapped] = actual; }catch(_){}
+              }
+              try{ cb && cb({ val: function(){ return actual; }}); }catch(_){}
+              return;
+            }
+
+            // Missing row => seed ONCE (best effort)
+            try{
+              if(window.__TAIF_SEED_DONE__ && window.__TAIF_SEED_DONE__[mapped]) return;
+              window.__TAIF_SEED_DONE__[mapped] = true;
+            }catch(_){}
+
+            var fallback = null;
+
+            // 1) Try global DB seed: taif/<...>
+            try{
+              var res2 = await supa2.from("app_state").select("value").eq("key", templateKey).maybeSingle();
+              if(res2 && res2.data && ("value" in res2.data)) fallback = res2.data.value;
+            }catch(_){}
+
             // 2) Try legacy local cache (non-branch) if exists
             if(fallback==null){
               try{
@@ -720,7 +723,8 @@ if(shouldScopeKey(String(logical||""))){
                 if(legacy && legacy.bannerImg && templateKey==="taif/bannerImg") fallback = legacy.bannerImg;
               }catch(_){}
             }
-            // 3) If still null, use built-in default seed (from branch-seed-data-v10)
+
+            // 3) Built-in default seed (from branch-seed-data-v10)
             if(fallback==null && typeof window.__TAIF_DEFAULT_SEED__==="object" && window.__TAIF_DEFAULT_SEED__){
               try{
                 var map = window.__TAIF_DEFAULT_SEED__;
@@ -729,26 +733,24 @@ if(shouldScopeKey(String(logical||""))){
               }catch(_){}
             }
 
-            // Send fallback to UI now
-            try{
-              cb && cb({ val: function(){ return fallback; }});
-            }catch(_){}
+            // If still null, do nothing
+            if(fallback==null) return;
 
-            // Write to branch key once (best effort)
-            try{
-              if(fallback!=null){
-                await origSet(mapped, fallback);
-              }
-            }catch(_){}
-          }catch(_){}
+            // Send fallback to UI now + write to branch key ONCE (no overwrite risk because row is missing)
+            try{ cb && cb({ val: function(){ return fallback; }}); }catch(_){}
+            try{ await origSet(mapped, fallback); }catch(_){}
+            try{ window.__TAIF_LAST_GOOD__[mapped] = fallback; }catch(_){}
+          }catch(_){
+          }finally{
+            try{ if(window.__TAIF_SEED_CHECKING__) window.__TAIF_SEED_CHECKING__[mapped] = false; }catch(_){}
+          }
         })();
       });
     }
   }catch(_){}
   return origOn(mapped, cb);
 }
-
-        return origOn(refOrPath, cb);
+return origOn(refOrPath, cb);
       };
 
       window.$db.off = function(refOrPath){
@@ -1939,9 +1941,82 @@ const o=__fieldsForMode__(l,s),v=c.USD?"USD":Object.keys(c)[0],m="SYP_BASE",g=d&
      <button class="tr-btn print" type="button" id="inv-print">🧾 طباعة</button>
      <button class="tr-btn del" type="button" id="inv-cancel">✖ إلغاء</button>
     </div>\n
-<div style="margin-top:12px">\n     <button class="trade-submit ${"sell"===e.mode?"sell":"buy"}" type="button" id="inv-exec" style="width:100%;min-width:0">✅ تنفيذ</button>\n    </div>\n   `,t(".trade-backbtn",modalEl).addEventListener("click",()=>{try{L(e.mode,Object.assign({},e,{autoRate:false,__freeze:true}))}catch(_){}}),t("#inv-edit",modalEl).addEventListener("click",()=>{try{L(e.mode,Object.assign({},e,{autoRate:false,__freeze:true}))}catch(_){}}),t("#inv-copy",modalEl).addEventListener("click",()=>function(t){const e=(t||"").trim();if(!e)return r("⚠️ لا يوجد نص لنسخه");const n=()=>r("✅ تم نسخ الفاتورة"),a=()=>r("⚠️ تعذر النسخ — انسخ يدويًا");try{if(navigator.clipboard&&window.isSecureContext)return void navigator.clipboard.writeText(e).then(n).catch(()=>{try{const t=document.createElement("textarea");t.value=e,t.style.position="fixed",t.style.opacity="0",t.style.left="-9999px",document.body.appendChild(t),t.select(),document.execCommand("copy"),t.remove(),n()}catch(t){a()}})}catch(t){}try{const t=document.createElement("textarea");t.value=e,t.style.position="fixed",t.style.opacity="0",t.style.left="-9999px",document.body.appendChild(t),t.select(),document.execCommand("copy"),t.remove(),n()}catch(t){a()}}(D(e))),t("#inv-print",modalEl).addEventListener("click",()=>function(t){try{if(window.TAIFNative&&window.TAIFNative.printHtml){window.TAIFNative.printHtml(t,"TAIF");return;}// mobile-safe print (no new tab)
-// use hidden iframe so the browser opens the print dialog without navigating
-let e=document.getElementById("tr-print-frame");e||(e=document.createElement("iframe"),e.id="tr-print-frame",e.style.position="fixed",e.style.right="0",e.style.bottom="0",e.style.width="0",e.style.height="0",e.style.border="0",e.style.opacity="0",e.style.pointerEvents="none",e.style.visibility="hidden",document.body.appendChild(e));const n=String(Date.now())+Math.random().toString(16).slice(2);e.dataset.printToken=n;const a=e.contentWindow.document;a.open(),a.write(t),a.close();let r=!1;const i=()=>{try{if(r)return;if(e.dataset.printToken!==n)return;r=!0,e.contentWindow.focus(),e.contentWindow.print()}catch(t){}};e.onload=i,setTimeout(i,550)}catch(t){r("⚠️ تعذر فتح نافذة الطباعة")}}(function(t){const e=i()||{},n=e.username||e.name||"—",a="sell"===t.mode,r=new Date(t.at||Date.now()),s=`${r.getFullYear()}/${String(r.getMonth()+1).padStart(2,"0")}/${String(r.getDate()).padStart(2,"0")} ${String(r.getHours()).padStart(2,"0")}:${String(r.getMinutes()).padStart(2,"0")}:${String(r.getSeconds()).padStart(2,"0")}`;let d="",o="";try{d=localStorage.getItem("taif:logo")||""}catch(t){}try{o="شركة طيف للصرافة والحوالات"}catch(t){}o="شركة طيف للصرافة والحوالات";const c="فاتورة "+("exchange"===t.mode?"استبدال":(a?"سعر المبيع":"سعر الشراء")),v=(__fieldsForMode__(l,(function(){try{return String(t&&t.mode||t&&t.trade_type||"sell");}catch(_){return "sell"}})())).filter(t=>t&&!1!==t.enabled),m=[];try{const e=new Set(["name","phone","note","ملاحظة","الاسم","الرقم","رقم"]);for(const n of v){if(!n||!1===n.enabled)continue;const a=String(n.key||"").trim(),r=String(n.label||a).trim();if(!a||"name"===a||"phone"===a||"note"===a)continue;const i=(t.fields&&(t.fields[a]??t.fields[r]))??"",s=String(i||"").trim();s&&(e.add(a),e.add(r),m.push(`<div class="row"><div class="k">${C(r)}</div><div class="v rtl">${C(s)}</div></div>`))}Object.keys(t.fields||{}).forEach(n=>{if(!n||e.has(n)||"name"===n||"phone"===n||"note"===n)return;const a=String(t.fields[n]||"").trim();a&&m.push(`<div class="row"><div class="k">${C(n)}</div><div class="v rtl">${C(a)}</div></div>`)})}catch(t){}const g=t.fields&&(t.fields.name||t.fields["الاسم"])?t.fields.name||t.fields["الاسم"]:"",b=t.fields&&(t.fields.phone||t.fields["الرقم"]||t.fields["رقم"])?t.fields.phone||t.fields["الرقم"]||t.fields["رقم"]:"",f=t.fields&&(t.fields.note||t.fields["ملاحظة"])?t.fields.note||t.fields["ملاحظة"]:"",y={seq:t&&t.seq?t.seq:"",currency_code:t.get||"",pay_currency_code:t.pay||"",rate:t.rate,amount_get:t.amountGet,amount_pay:t.amountPay,note:f},h=t=>{try{if(null==t||""===t)return"";const e=Number(String(t).replace(/,/g,""));return isFinite(e)?e.toLocaleString("en-US"):String(t)}catch(e){return String(t||"")}};const __enClient=(function(){try{const s=u(l);const arr=Array.isArray(s.fields)?s.fields:(Array.isArray(p)?p:[]);const by=(s&&s.byMode&&typeof s.byMode==="object")?s.byMode:null;const modeRaw=String((t&&t.mode)||(t&&t.trade_type)||(t&&t.type)||((t&&t.extra&&t.extra.kind)||"")).toLowerCase();const mode=(modeRaw==="sell")?"sell":(modeRaw==="buy")?"buy":(modeRaw==="exchange")?"exchange":(modeRaw.includes("exchange")?"exchange":(modeRaw.includes("sell")?"sell":"buy"));const map=(by&&by[mode]&&typeof by[mode]==="object")?by[mode]:null;if(map){return (arr||[]).filter(f=>f&&!!map[String(f.key||"").trim()]);}return (arr||[]).filter(f=>f&&f.enabled!==false);}catch(_){return []}})();const __showClient=__enClient.some(f=>{const k=String(f.key||"").trim();return k&&k!=="note"});const __showName=__enClient.some(f=>String(f.key||"").trim()==="name");const __showPhone=__enClient.some(f=>String(f.key||"").trim()==="phone");const __clientSec=(__showClient&&(__showName||__showPhone||m.length))?("\n\n   <div class=\"hr\"></div>\n   <div class=\"sec\">\n    <div class=\"h\">بيانات العميل</div>\n    <div class=\"clientbox\">"+(__showName?("\n    <div class=\"row\"><div class=\"k\">الاسم</div><div class=\"v rtl\">"+C((g||"").trim()||"—")+"</div></div>"):"")+(__showPhone?("\n    <div class=\"row\"><div class=\"k\">الرقم</div><div class=\"v rtl\">"+C((b||"").trim()||"—")+"</div></div>"):"")+(m.length?("\n    "+m.join("")):"")+"\n   </div>\n\n    </div>"):"";return`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${C(c)}</title>\n<style>\n:root{\n \n --paper:80mm;\n --w:72mm;\n --pad:2.2mm;\n\n --ink:#0b1220;\n --muted:#0f172a;\n --muted2:#475569;\n\n --g:rgba(34,197,94,.13);\n --r:rgba(239,68,68,.11);\n}\n*{box-sizing:border-box}\nhtml,body{\n margin:0;padding:0;background:#fff;color:var(--ink);\n font-family:Tahoma,system-ui,Segoe UI,Roboto,Arial;\n -webkit-print-color-adjust:exact;print-color-adjust:exact;\n}\n.paper{width:var(--w);margin:0 auto;padding:var(--pad)}\n.card{\n border:1px solid rgba(15,23,42,.14);\n border-radius:14px;\n padding:10px 10px;\n}\n.head{\n display:flex;\n align-items:center;\n justify-content:center;\n gap:8px;\n\n padding:8px 8px;\n border:1px solid rgba(15,23,42,.06);\n border-radius:12px;\n background:rgba(15,23,42,.02);\n}\n.brand{display:flex;align-items:center;justify-content:center;gap:8px;min-width:0;width:100%;flex-direction:column}\n\n.brand img{\n width:34px;height:34px;border-radius:10px;object-fit:contain;\n border:1px solid rgba(15,23,42,.10);background:#fff;\n}\n.brand .t{\n font-weight:1000;\n font-size:18px;\n line-height:1.15;\n white-space:normal;\n overflow:visible;\n text-overflow:clip;\n max-width:100%;\n text-align:center;\n direction:rtl;\n unicode-bidi:plaintext;\n}\n\n.sec{margin-top:8px}\n.h{\n font-weight:1000;\n font-size:11px;\n color:var(--muted2);\n margin:0 0 4px 0;\n display:flex;align-items:center;justify-content:space-between;\n}\n.hr{height:1px;background:rgba(15,23,42,.10);margin:7px 0}\n\n.row{\n display:grid;\n grid-template-columns:1fr 1.15fr;\n gap:8px;\n padding:4.5px 0;\n border-bottom:1px solid rgba(15,23,42,.07);\n align-items:start;\n}\n.row:last-child{border-bottom:0}\n\n.k{\n font-weight:1000;\n color:var(--muted);\n font-size:12px;\n line-height:1.2;\n text-align:right;\n direction:rtl;\n unicode-bidi:plaintext;\n overflow-wrap:anywhere;\n}\n.v{\n font-weight:1000;\n font-size:12.3px;\n line-height:1.2;\n text-align:left;\n direction:ltr;\n unicode-bidi:isolate;\n overflow-wrap:anywhere;\n}\n.v.rtl{direction:rtl;text-align:right;unicode-bidi:plaintext}\n.v.nowrap{white-space:nowrap !important}\n.big .v{font-size:13.2px}\n\n.totals{\n border:1px dashed rgba(15,23,42,.18);\n border-radius:12px;\n padding:7px 8px;\n background:rgba(15,23,42,.015);\n}\n.totals .row{border-bottom:1px dashed rgba(15,23,42,.12)}\n.totals .row:last-child{border-bottom:0}\n.totals .row.big{padding-top:5px;padding-bottom:5px}\n.totals .row.big .k{font-size:12.2px}\n.totals .row.big .v{font-size:13.6px}\n\n\n.clientbox{border:1px solid rgba(15,23,42,.28);border-radius:12px;overflow:hidden;background:#fff}\n.clientbox .row{border-bottom:1px solid rgba(15,23,42,.22);padding:0;margin:0;grid-template-columns:44% 56%}\n.clientbox .row:last-child{border-bottom:0}\n.clientbox .k{padding:7px 8px;border-left:1px solid rgba(15,23,42,.22);background:rgba(15,23,42,.03)}\n.clientbox .v{padding:7px 8px}\n\n\n.clientbox{border:1px solid rgba(15,23,42,.25);border-radius:12px;overflow:hidden}\n.clientbox .row{border-bottom:1px solid rgba(15,23,42,.20);padding:6px 8px;margin:0}\n.clientbox .row:last-child{border-bottom:0}\n.clientbox .k{border-left:1px solid rgba(15,23,42,.18);padding-left:8px}\n.clientbox .v{padding-right:8px}\n@media print{.clientbox{border-color:rgba(0,0,0,.45)}.clientbox .row{border-bottom-color:rgba(0,0,0,.35)}.clientbox .k{border-left-color:rgba(0,0,0,.35)}}\n\n.footnote{\n margin-top:7px;\n font-size:10.5px;\n color:#374151;\n text-align:center;\n}\n\n@page{size:80mm auto;margin:0mm}\n@media print{\n html,body{width:var(--paper);max-width:var(--paper)}\n .paper{width:var(--w);margin:0;padding:2mm}\n .card{border:0;border-radius:0;padding:0}\n .head{border:0;border-radius:0;padding:0 0 6px 0;background:transparent}\n .footnote{display:none}\n}\n</style>
+<div style="margin-top:12px">\n     <button class="trade-submit ${"sell"===e.mode?"sell":"buy"}" type="button" id="inv-exec" style="width:100%;min-width:0">✅ تنفيذ</button>\n    </div>\n   `,t(".trade-backbtn",modalEl).addEventListener("click",()=>{try{L(e.mode,Object.assign({},e,{autoRate:false,__freeze:true}))}catch(_){}}),t("#inv-edit",modalEl).addEventListener("click",()=>{try{L(e.mode,Object.assign({},e,{autoRate:false,__freeze:true}))}catch(_){}}),t("#inv-copy",modalEl).addEventListener("click",()=>function(t){const e=(t||"").trim();if(!e)return r("⚠️ لا يوجد نص لنسخه");const n=()=>r("✅ تم نسخ الفاتورة"),a=()=>r("⚠️ تعذر النسخ — انسخ يدويًا");try{if(navigator.clipboard&&window.isSecureContext)return void navigator.clipboard.writeText(e).then(n).catch(()=>{try{const t=document.createElement("textarea");t.value=e,t.style.position="fixed",t.style.opacity="0",t.style.left="-9999px",document.body.appendChild(t),t.select(),document.execCommand("copy"),t.remove(),n()}catch(t){a()}})}catch(t){}try{const t=document.createElement("textarea");t.value=e,t.style.position="fixed",t.style.opacity="0",t.style.left="-9999px",document.body.appendChild(t),t.select(),document.execCommand("copy"),t.remove(),n()}catch(t){a()}}(D(e))),t("#inv-print",modalEl).addEventListener("click",()=>function(t){try{if(window.TAIFNative&&window.TAIFNative.printHtml){window.TAIFNative.printHtml(t,"TAIF");return;}// mobile-safe print (FIXED: no blank page)
+// use off-screen (but renderable) iframe + wait for images/fonts before calling print
+let e=document.getElementById("tr-print-frame");
+if(!e){
+  e=document.createElement("iframe");
+  e.id="tr-print-frame";
+  e.setAttribute("aria-hidden","true");
+  e.style.position="fixed";
+  e.style.left="-10000px";
+  e.style.top="0";
+  e.style.width="1px";
+  e.style.height="1px";
+  e.style.border="0";
+  e.style.opacity="0.01";
+  e.style.pointerEvents="none";
+  // IMPORTANT: do NOT use visibility:hidden / display:none (some WebViews print blank)
+  document.body.appendChild(e);
+}
+const n=String(Date.now())+Math.random().toString(16).slice(2);
+e.dataset.printToken=n;
+let p=!1,tries=0;
+const i=async()=>{
+  try{
+    if(e.dataset.printToken!==n) return;
+    const w=e.contentWindow;
+    const d=w&&w.document;
+    if(!w||!d) return;
+
+    // Wait until document is fully ready (avoid blank print)
+    if(d.readyState!=="complete" && tries<10){
+      tries++;
+      return void setTimeout(()=>{ i(); },120);
+    }
+
+    if(p) return;
+    p=!0;
+
+    // Wait for fonts (if supported)
+    try{ if(d.fonts&&d.fonts.ready) await d.fonts.ready; }catch(_){ }
+
+    // Wait for images (logo) OR timeout
+    try{
+      const imgs=Array.from(d.images||[]);
+      await Promise.race([
+        Promise.all(imgs.map(img=>img.complete?Promise.resolve():new Promise(res=>{img.onload=img.onerror=res;}))),
+        new Promise(res=>setTimeout(res,1200))
+      ]);
+    }catch(_){ }
+
+    // Give layout a couple frames
+    await new Promise(res=>requestAnimationFrame(()=>requestAnimationFrame(res)));
+
+    try{ w.focus(); }catch(_){ }
+    try{ w.print(); }catch(_){ }
+  }catch(_){ }
+};
+try{
+  // srcdoc is more reliable than document.write in many WebViews
+  if("srcdoc" in e){
+    e.onload=()=>{ i(); };
+    e.srcdoc=t;
+    // Fallback in case onload doesn't fire
+    setTimeout(()=>{ i(); },900);
+  }else{
+    e.onload=()=>{ i(); };
+    const a=e.contentWindow.document;
+    a.open();a.write(t);a.close();
+    setTimeout(()=>{ i(); },900);
+  }
+}catch(_){
+  try{
+    const a=e.contentWindow.document;
+    a.open();a.write(t);a.close();
+  }catch(__){ }
+  setTimeout(()=>{ i(); },900);
+}}catch(t){r("⚠️ تعذر فتح نافذة الطباعة")}}(function(t){const e=i()||{},n=e.username||e.name||"—",a="sell"===t.mode,r=new Date(t.at||Date.now()),s=`${r.getFullYear()}/${String(r.getMonth()+1).padStart(2,"0")}/${String(r.getDate()).padStart(2,"0")} ${String(r.getHours()).padStart(2,"0")}:${String(r.getMinutes()).padStart(2,"0")}:${String(r.getSeconds()).padStart(2,"0")}`;let d="",o="";try{d=localStorage.getItem("taif:logo")||""}catch(t){}try{o="شركة طيف للصرافة والحوالات"}catch(t){}o="شركة طيف للصرافة والحوالات";const c="فاتورة "+("exchange"===t.mode?"استبدال":(a?"سعر المبيع":"سعر الشراء")),v=(__fieldsForMode__(l,(function(){try{return String(t&&t.mode||t&&t.trade_type||"sell");}catch(_){return "sell"}})())).filter(t=>t&&!1!==t.enabled),m=[];try{const e=new Set(["name","phone","note","ملاحظة","الاسم","الرقم","رقم"]);for(const n of v){if(!n||!1===n.enabled)continue;const a=String(n.key||"").trim(),r=String(n.label||a).trim();if(!a||"name"===a||"phone"===a||"note"===a)continue;const i=(t.fields&&(t.fields[a]??t.fields[r]))??"",s=String(i||"").trim();s&&(e.add(a),e.add(r),m.push(`<div class="row"><div class="k">${C(r)}</div><div class="v rtl">${C(s)}</div></div>`))}Object.keys(t.fields||{}).forEach(n=>{if(!n||e.has(n)||"name"===n||"phone"===n||"note"===n)return;const a=String(t.fields[n]||"").trim();a&&m.push(`<div class="row"><div class="k">${C(n)}</div><div class="v rtl">${C(a)}</div></div>`)})}catch(t){}const g=t.fields&&(t.fields.name||t.fields["الاسم"])?t.fields.name||t.fields["الاسم"]:"",b=t.fields&&(t.fields.phone||t.fields["الرقم"]||t.fields["رقم"])?t.fields.phone||t.fields["الرقم"]||t.fields["رقم"]:"",f=t.fields&&(t.fields.note||t.fields["ملاحظة"])?t.fields.note||t.fields["ملاحظة"]:"",y={seq:t&&t.seq?t.seq:"",currency_code:t.get||"",pay_currency_code:t.pay||"",rate:t.rate,amount_get:t.amountGet,amount_pay:t.amountPay,note:f},h=t=>{try{if(null==t||""===t)return"";const e=Number(String(t).replace(/,/g,""));return isFinite(e)?e.toLocaleString("en-US"):String(t)}catch(e){return String(t||"")}};const __enClient=(function(){try{const s=u(l);const arr=Array.isArray(s.fields)?s.fields:(Array.isArray(p)?p:[]);const by=(s&&s.byMode&&typeof s.byMode==="object")?s.byMode:null;const modeRaw=String((t&&t.mode)||(t&&t.trade_type)||(t&&t.type)||((t&&t.extra&&t.extra.kind)||"")).toLowerCase();const mode=(modeRaw==="sell")?"sell":(modeRaw==="buy")?"buy":(modeRaw==="exchange")?"exchange":(modeRaw.includes("exchange")?"exchange":(modeRaw.includes("sell")?"sell":"buy"));const map=(by&&by[mode]&&typeof by[mode]==="object")?by[mode]:null;if(map){return (arr||[]).filter(f=>f&&!!map[String(f.key||"").trim()]);}return (arr||[]).filter(f=>f&&f.enabled!==false);}catch(_){return []}})();const __showClient=__enClient.some(f=>{const k=String(f.key||"").trim();return k&&k!=="note"});const __showName=__enClient.some(f=>String(f.key||"").trim()==="name");const __showPhone=__enClient.some(f=>String(f.key||"").trim()==="phone");const __clientSec=(__showClient&&(__showName||__showPhone||m.length))?("\n\n   <div class=\"hr\"></div>\n   <div class=\"sec\">\n    <div class=\"h\">بيانات العميل</div>\n    <div class=\"clientbox\">"+(__showName?("\n    <div class=\"row\"><div class=\"k\">الاسم</div><div class=\"v rtl\">"+C((g||"").trim()||"—")+"</div></div>"):"")+(__showPhone?("\n    <div class=\"row\"><div class=\"k\">الرقم</div><div class=\"v rtl\">"+C((b||"").trim()||"—")+"</div></div>"):"")+(m.length?("\n    "+m.join("")):"")+"\n   </div>\n\n    </div>"):"";return`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${C(c)}</title>\n<style>\n:root{\n \n --paper:80mm;\n --w:72mm;\n --pad:2.2mm;\n\n --ink:#0b1220;\n --muted:#0f172a;\n --muted2:#475569;\n\n --g:rgba(34,197,94,.13);\n --r:rgba(239,68,68,.11);\n}\n*{box-sizing:border-box}\nhtml,body{\n margin:0;padding:0;background:#fff;color:var(--ink);\n font-family:Tahoma,system-ui,Segoe UI,Roboto,Arial;\n -webkit-print-color-adjust:exact;print-color-adjust:exact;\n}\n.paper{width:var(--w);margin:0 auto;padding:var(--pad)}\n.card{\n border:1px solid rgba(15,23,42,.14);\n border-radius:14px;\n padding:10px 10px;\n}\n.head{\n display:flex;\n align-items:center;\n justify-content:center;\n gap:8px;\n\n padding:8px 8px;\n border:1px solid rgba(15,23,42,.06);\n border-radius:12px;\n background:rgba(15,23,42,.02);\n}\n.brand{display:flex;align-items:center;justify-content:center;gap:8px;min-width:0;width:100%;flex-direction:column}\n\n.brand img{\n width:34px;height:34px;border-radius:10px;object-fit:contain;\n border:1px solid rgba(15,23,42,.10);background:#fff;\n}\n.brand .t{\n font-weight:1000;\n font-size:18px;\n line-height:1.15;\n white-space:normal;\n overflow:visible;\n text-overflow:clip;\n max-width:100%;\n text-align:center;\n direction:rtl;\n unicode-bidi:plaintext;\n}\n\n.sec{margin-top:8px}\n.h{\n font-weight:1000;\n font-size:11px;\n color:var(--muted2);\n margin:0 0 4px 0;\n display:flex;align-items:center;justify-content:space-between;\n}\n.hr{height:1px;background:rgba(15,23,42,.10);margin:7px 0}\n\n.row{\n display:grid;\n grid-template-columns:1fr 1.15fr;\n gap:8px;\n padding:4.5px 0;\n border-bottom:1px solid rgba(15,23,42,.07);\n align-items:start;\n}\n.row:last-child{border-bottom:0}\n\n.k{\n font-weight:1000;\n color:var(--muted);\n font-size:12px;\n line-height:1.2;\n text-align:right;\n direction:rtl;\n unicode-bidi:plaintext;\n overflow-wrap:anywhere;\n}\n.v{\n font-weight:1000;\n font-size:12.3px;\n line-height:1.2;\n text-align:left;\n direction:ltr;\n unicode-bidi:isolate;\n overflow-wrap:anywhere;\n}\n.v.rtl{direction:rtl;text-align:right;unicode-bidi:plaintext}\n.v.nowrap{white-space:nowrap !important}\n.big .v{font-size:13.2px}\n\n.totals{\n border:1px dashed rgba(15,23,42,.18);\n border-radius:12px;\n padding:7px 8px;\n background:rgba(15,23,42,.015);\n}\n.totals .row{border-bottom:1px dashed rgba(15,23,42,.12)}\n.totals .row:last-child{border-bottom:0}\n.totals .row.big{padding-top:5px;padding-bottom:5px}\n.totals .row.big .k{font-size:12.2px}\n.totals .row.big .v{font-size:13.6px}\n\n\n.clientbox{border:1px solid rgba(15,23,42,.28);border-radius:12px;overflow:hidden;background:#fff}\n.clientbox .row{border-bottom:1px solid rgba(15,23,42,.22);padding:0;margin:0;grid-template-columns:44% 56%}\n.clientbox .row:last-child{border-bottom:0}\n.clientbox .k{padding:7px 8px;border-left:1px solid rgba(15,23,42,.22);background:rgba(15,23,42,.03)}\n.clientbox .v{padding:7px 8px}\n\n\n.clientbox{border:1px solid rgba(15,23,42,.25);border-radius:12px;overflow:hidden}\n.clientbox .row{border-bottom:1px solid rgba(15,23,42,.20);padding:6px 8px;margin:0}\n.clientbox .row:last-child{border-bottom:0}\n.clientbox .k{border-left:1px solid rgba(15,23,42,.18);padding-left:8px}\n.clientbox .v{padding-right:8px}\n@media print{.clientbox{border-color:rgba(0,0,0,.45)}.clientbox .row{border-bottom-color:rgba(0,0,0,.35)}.clientbox .k{border-left-color:rgba(0,0,0,.35)}}\n\n.footnote{\n margin-top:7px;\n font-size:10.5px;\n color:#374151;\n text-align:center;\n}\n\n@page{size:80mm auto;margin:0mm}\n@media print{\n html,body{width:var(--paper);max-width:var(--paper)}\n .paper{width:var(--w);margin:0;padding:2mm}\n .card{border:0;border-radius:0;padding:0}\n .head{border:0;border-radius:0;padding:0 0 6px 0;background:transparent}\n .footnote{display:none}\n}\n</style>
 
 
 <style id="rate-align-adjust">
@@ -2064,9 +2139,82 @@ function K2(){
  // recompute after typing
  B.addEventListener("input",()=>{K();});
  F.addEventListener("input",()=>{K2();});
-O.addEventListener("click",async()=>{const a=function(t){const n={};return e("[data-dyn]",t).forEach(t=>{n[t.getAttribute("data-dyn")]=(t.value||"").trim()}),n}(t("#trade-dyn-fields",modal)),i=n(A.amountGet),s=n(A.amountPay),d=n(A.rate),l=o.filter(t=>t.enabled);for(const e of l){if(!(a[e.key]||"").trim()){r(`⚠️ أدخل ${e.label}`);const n=t(`[data-dyn="${e.key}"]`,modal);try{n&&n.focus()}catch(t){}return}}if(!A.get||!A.pay||A.get===A.pay)return void r("⚠️ اختر عملتين مختلفتين");if(!(d>0))return void r("⚠️ سعر التحويل غير صحيح");if(!(i>0&&s>0))return void r("⚠️ أدخل المبالغ بشكل صحيح");try{O.disabled=!0,O.style.opacity="0.75"}catch(t){}r("⏳ جاري إنشاء الفاتورة...");const c={mode:A.mode,at:Date.now(),iso:(new Date).toISOString(),get:w(A.get),pay:w(A.pay),rate:d,amountGet:i,amountPay:s,autoRate:A.autoRate,fields:a};A.seq&&(c.seq=A.seq);const p=await b(c);try{O.disabled=!1,O.style.opacity=""}catch(t){}p&&p.ok?(c.seq=p.seq,A.seq=p.seq,c.extra=c.extra||{},c.extra.status="draft",renderInvoice(modal,c)):r("⚠️ تعذر إنشاء الفاتورة")})}function A(){const e=h(),n=t(".trade-modal",e),a=m();if(!a)return void r("⚠️ تعذر الاتصال بقاعدة البيانات");const s=g();let d={from:s,to:s,type:"all",currency:"all",users:[],q:"",advOpen:!1};function o(t){return String(t||"").replace(/[&<>"']/g,t=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[t]))}function c(t){if(d.advOpen){d.advOpen=!1;$(d.__itemsCache&&Array.isArray(d.__itemsCache)?d.__itemsCache:t&&Array.isArray(t)?t:[])}else x()}function v(t){try{return new Intl.NumberFormat("en-US",{maximumFractionDigits:0}).format(Math.round(Number(t||0)))}catch(e){return String(t||0)}}function b(t){try{if(window.TAIFNative&&window.TAIFNative.printHtml){window.TAIFNative.printHtml(t,"TAIF");return;}// mobile-safe print (no new tab)
-// use hidden iframe so the browser opens the print dialog without navigating
-let e=document.getElementById("tr-print-frame");e||(e=document.createElement("iframe"),e.id="tr-print-frame",e.style.position="fixed",e.style.right="0",e.style.bottom="0",e.style.width="0",e.style.height="0",e.style.border="0",e.style.opacity="0",e.style.pointerEvents="none",e.style.visibility="hidden",document.body.appendChild(e));const n=String(Date.now())+Math.random().toString(16).slice(2);e.dataset.printToken=n;const a=e.contentWindow.document;a.open(),a.write(t),a.close();let r=!1;const i=()=>{try{if(r)return;if(e.dataset.printToken!==n)return;r=!0,e.contentWindow.focus(),e.contentWindow.print()}catch(t){}};e.onload=i,setTimeout(i,550)}catch(t){r("⚠️ تعذر فتح نافذة الطباعة/PDF")}}function f(t,e,n){try{const a=t=>String(null==t?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;"),r=`<Row>${(e||[]).map(t=>`<Cell ss:StyleID="hdr"><Data ss:Type="String">${a(t)}</Data></Cell>`).join("")}</Row>`,i=`<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"\n xmlns:o="urn:schemas-microsoft-com:office:office"\n xmlns:x="urn:schemas-microsoft-com:office:excel"\n xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"\n xmlns:html="http://www.w3.org/TR/REC-html40"><Styles><Style ss:ID="hdr"><Font ss:Bold="1"/><Interior ss:Color="#F3F4F6" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style><Style ss:ID="cell"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style></Styles><Worksheet ss:Name="السجلات"><Table>${r}${(n||[]).map(t=>`<Row>${(t||[]).map(t=>`<Cell ss:StyleID="cell"><Data ss:Type="String">${a(t)}</Data></Cell>`).join("")}</Row>`).join("")}</Table><WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><DisplayRightToLeft/></WorksheetOptions></Worksheet></Workbook>`,s=new Blob(["\ufeff",i],{type:"application/vnd.ms-excel;charset=utf-8;"}),d=document.createElement("a");try{if(window.TAIFNative&&window.TAIFNative.shareTextFile){window.TAIFNative.shareTextFile("\ufeff"+i,"application/vnd.ms-excel;charset=utf-8;",t||"export.xml");return}}catch(_){};d.href=URL.createObjectURL(s),d.download=t||"export.xml",document.body.appendChild(d),d.click(),setTimeout(()=>{try{URL.revokeObjectURL(d.href)}catch(t){}try{d.remove()}catch(t){}},0)}catch(t){r("⚠️ تعذر تصدير ملف Excel")}}function y(t){const e=function(){try{const t=u(l);return(Array.isArray(t.fields)?t.fields:Array.isArray(p)?p:[]).filter(t=>t&&!1!==t.enabled)}catch(t){return(Array.isArray(p)?p:[]).filter(t=>t&&!1!==t.enabled)}}(),n=[];for(const t of e){const e=String(t.key||"").trim();if(!e||"name"===e||"phone"===e||"note"===e)continue;const a=String(t.label||e).trim();a&&!n.includes(a)&&n.push(a)}const a=(t||[]).map(t=>{const K=(t&&t.extra&&(t.extra.kind||t.extra.mode||t.extra.__kind))||t.trade_type,n="sell"===K?"سعر المبيع":"buy"===K?"سعر الشراء":"exchange"===K?"استبدال":K,a=t.extra&&t.extra.fields?t.extra.fields:{},r=[t.seq??"",t.trade_day||"",n||"",t.currency_code||"",t.amount_get??"",t.rate??"",t.amount_pay??"",t.pay_currency_code||"",t.actor_username||"",t.note||"",a.name||"",a.phone||""];for(const t of e){const e=String(t.key||"").trim();if(!e||"name"===e||"phone"===e||"note"===e)continue;const n=String(t.label||e).trim();r.push(a[e]??a[n]??"")}return r});return{headers:["رقم العملية","التاريخ","النوع","أسعار صرف العملات","المبلغ","سعر التحويل","الإجمالي","عملة الدفع","المنفذ","ملاحظة","الاسم","الرقم"].concat(n),rows:a}}function w(t){const e=y(t);!function(t,e,n){try{if(!window.XLSX)return f(String(t||"export.xlsx").replace(/\.xlsx$/i,".xml"),e,n);const a=[e].concat(n||[]),r=XLSX.utils.aoa_to_sheet(a),i=(e||[]).length,s=[];for(let t=0;t<i;t++){let a=String(e[t]??"").length;for(let e=0;e<Math.min((n||[]).length,80);e++){const r=n[e]&&null!=n[e][t]?String(n[e][t]):"";r.length>a&&(a=r.length)}s.push({wch:Math.min(Math.max(a+2,10),42)})}r["!cols"]=s;const d=XLSX.utils.book_new();d.Workbook={Views:[{RTL:!0}]},XLSX.utils.book_append_sheet(d,r,"السجل");const o=String(t||"سجل_السعر المبيع_والسعر الشراء.xlsx").replace(/\.(xls|xml)$/i,"").replace(/\s+/g,"_")+".xlsx";if(window.TAIFNative&&window.TAIFNative.shareBase64File){try{const b64=XLSX.write(d,{bookType:"xlsx",type:"base64",compression:!0});window.TAIFNative.shareBase64File(b64,"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",o);return}catch(_){} }XLSX.writeFile(d,o,{compression:!0})}catch(t){r("⚠️ تعذر تصدير ملف Excel")}}(`سجل_السعر المبيع_والسعر الشراء_${d.from||s}_الى_${d.to||s}.xlsx`,e.headers,e.rows),r("✅ تم تصدير ملف Excel")}function _(t){const e=t=>String(null==t?"":t).replace(/[&<>"']/g,t=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[t])),n=t=>{try{if(null==t||""===t)return"";const e=Number(String(t).replace(/,/g,""));return isFinite(e)?e.toLocaleString("en-US"):String(t)}catch(e){return String(t||"")}};let a="",r="";try{a=localStorage.getItem("taif:logo")||""}catch(t){}try{r="شركة طيف للصرافة والحوالات"}catch(t){}const i=function(){try{const t=u(l);return(Array.isArray(t.fields)?t.fields:Array.isArray(p)?p:[]).filter(t=>t&&!1!==t.enabled)}catch(t){return(Array.isArray(p)?p:[]).filter(t=>t&&!1!==t.enabled)}}();return`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>\n<title>PDF</title>\n<style>\n:root{\n --paper:80mm;\n --w:72mm;\n --pad:2.2mm;\n --ink:#0b1220;\n --muted:#0f172a;\n --muted2:#475569;\n}\n*{box-sizing:border-box}\nhtml,body{margin:0;padding:0;background:#fff;color:var(--ink);font-family:Tahoma,system-ui,Segoe UI,Roboto,Arial;-webkit-print-color-adjust:exact;print-color-adjust:exact}\n.paper{width:var(--w);margin:0 auto;padding:var(--pad);page-break-after:always}\n.paper:last-child{page-break-after:auto}\n.card{border:1px solid rgba(15,23,42,.14);border-radius:14px;padding:10px 10px}\n.head{\n display:flex;\n align-items:center;\n justify-content:center;\n gap:8px;\npadding:8px 8px;border:1px solid rgba(15,23,42,.06);border-radius:12px;background:rgba(15,23,42,.02)}\n.brand{display:flex;align-items:center;justify-content:center;gap:8px;min-width:0;width:100%;flex-direction:column}\n\n.brand img{width:34px;height:34px;border-radius:10px;object-fit:contain;border:1px solid rgba(15,23,42,.10);background:#fff}\n.brand .t{\n font-weight:1000;\n font-size:18px;\n line-height:1.15;\n white-space:normal;\n overflow:visible;\n text-overflow:clip;\n max-width:100%;\n text-align:center;\n direction:rtl;\n unicode-bidi:plaintext;\n}\n\n.sec{margin-top:8px}\n.h{font-weight:1000;font-size:11px;color:var(--muted2);margin:0 0 4px 0;display:flex;align-items:center;justify-content:space-between}\n.hr{height:1px;background:rgba(15,23,42,.10);margin:7px 0}\n.row{display:grid;grid-template-columns:1fr 1.15fr;gap:8px;padding:4.5px 0;border-bottom:1px solid rgba(15,23,42,.07);align-items:start}\n.row:last-child{border-bottom:0}\n.k{font-weight:1000;color:var(--muted);font-size:12px;line-height:1.2;text-align:right;direction:rtl;unicode-bidi:plaintext;overflow-wrap:anywhere}\n.v{font-weight:1000;font-size:12.3px;line-height:1.2;text-align:left;direction:ltr;unicode-bidi:isolate;overflow-wrap:anywhere}\n.v.rtl{direction:rtl;text-align:right;unicode-bidi:plaintext}\n.v.nowrap{white-space:nowrap !important}\n.big .v{font-size:13.2px}\n.totals{border:1px dashed rgba(15,23,42,.18);border-radius:12px;padding:7px 8px;background:rgba(15,23,42,.015)}\n.totals .row{border-bottom:1px dashed rgba(15,23,42,.12)}\n.totals .row:last-child{border-bottom:0}\n.totals .row.big{padding-top:5px;padding-bottom:5px}\n.totals .row.big .k{font-size:12.2px}\n.totals .row.big .v{font-size:13.6px}\n\n\n.clientbox{border:1px solid rgba(15,23,42,.28);border-radius:12px;overflow:hidden;background:#fff}\n.clientbox .row{border-bottom:1px solid rgba(15,23,42,.22);padding:0;margin:0;grid-template-columns:44% 56%}\n.clientbox .row:last-child{border-bottom:0}\n.clientbox .k{padding:7px 8px;border-left:1px solid rgba(15,23,42,.22);background:rgba(15,23,42,.03)}\n.clientbox .v{padding:7px 8px}\n\n@page{size:A5;margin:10mm}@media print{html,body{margin:0;padding:0;width:auto;max-width:none}.paper{width:100%;max-width:none;margin:0;padding:0;page-break-after:always}.paper:last-child{page-break-after:auto}.card{border:0;border-radius:0;padding:0}.head{border:0;border-radius:0;padding:0 0 6px 0;background:transparent}}\n</style>
+O.addEventListener("click",async()=>{const a=function(t){const n={};return e("[data-dyn]",t).forEach(t=>{n[t.getAttribute("data-dyn")]=(t.value||"").trim()}),n}(t("#trade-dyn-fields",modal)),i=n(A.amountGet),s=n(A.amountPay),d=n(A.rate),l=o.filter(t=>t.enabled);for(const e of l){if(!(a[e.key]||"").trim()){r(`⚠️ أدخل ${e.label}`);const n=t(`[data-dyn="${e.key}"]`,modal);try{n&&n.focus()}catch(t){}return}}if(!A.get||!A.pay||A.get===A.pay)return void r("⚠️ اختر عملتين مختلفتين");if(!(d>0))return void r("⚠️ سعر التحويل غير صحيح");if(!(i>0&&s>0))return void r("⚠️ أدخل المبالغ بشكل صحيح");try{O.disabled=!0,O.style.opacity="0.75"}catch(t){}r("⏳ جاري إنشاء الفاتورة...");const c={mode:A.mode,at:Date.now(),iso:(new Date).toISOString(),get:w(A.get),pay:w(A.pay),rate:d,amountGet:i,amountPay:s,autoRate:A.autoRate,fields:a};A.seq&&(c.seq=A.seq);const p=await b(c);try{O.disabled=!1,O.style.opacity=""}catch(t){}p&&p.ok?(c.seq=p.seq,A.seq=p.seq,c.extra=c.extra||{},c.extra.status="draft",renderInvoice(modal,c)):r("⚠️ تعذر إنشاء الفاتورة")})}function A(){const e=h(),n=t(".trade-modal",e),a=m();if(!a)return void r("⚠️ تعذر الاتصال بقاعدة البيانات");const s=g();let d={from:s,to:s,type:"all",currency:"all",users:[],q:"",advOpen:!1};function o(t){return String(t||"").replace(/[&<>"']/g,t=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[t]))}function c(t){if(d.advOpen){d.advOpen=!1;$(d.__itemsCache&&Array.isArray(d.__itemsCache)?d.__itemsCache:t&&Array.isArray(t)?t:[])}else x()}function v(t){try{return new Intl.NumberFormat("en-US",{maximumFractionDigits:0}).format(Math.round(Number(t||0)))}catch(e){return String(t||0)}}function b(t){try{if(window.TAIFNative&&window.TAIFNative.printHtml){window.TAIFNative.printHtml(t,"TAIF");return;}// mobile-safe print (FIXED: no blank page)
+// use off-screen (but renderable) iframe + wait for images/fonts before calling print
+let e=document.getElementById("tr-print-frame");
+if(!e){
+  e=document.createElement("iframe");
+  e.id="tr-print-frame";
+  e.setAttribute("aria-hidden","true");
+  e.style.position="fixed";
+  e.style.left="-10000px";
+  e.style.top="0";
+  e.style.width="1px";
+  e.style.height="1px";
+  e.style.border="0";
+  e.style.opacity="0.01";
+  e.style.pointerEvents="none";
+  // IMPORTANT: do NOT use visibility:hidden / display:none (some WebViews print blank)
+  document.body.appendChild(e);
+}
+const n=String(Date.now())+Math.random().toString(16).slice(2);
+e.dataset.printToken=n;
+let p=!1,tries=0;
+const i=async()=>{
+  try{
+    if(e.dataset.printToken!==n) return;
+    const w=e.contentWindow;
+    const d=w&&w.document;
+    if(!w||!d) return;
+
+    // Wait until document is fully ready (avoid blank print)
+    if(d.readyState!=="complete" && tries<10){
+      tries++;
+      return void setTimeout(()=>{ i(); },120);
+    }
+
+    if(p) return;
+    p=!0;
+
+    // Wait for fonts (if supported)
+    try{ if(d.fonts&&d.fonts.ready) await d.fonts.ready; }catch(_){ }
+
+    // Wait for images (logo) OR timeout
+    try{
+      const imgs=Array.from(d.images||[]);
+      await Promise.race([
+        Promise.all(imgs.map(img=>img.complete?Promise.resolve():new Promise(res=>{img.onload=img.onerror=res;}))),
+        new Promise(res=>setTimeout(res,1200))
+      ]);
+    }catch(_){ }
+
+    // Give layout a couple frames
+    await new Promise(res=>requestAnimationFrame(()=>requestAnimationFrame(res)));
+
+    try{ w.focus(); }catch(_){ }
+    try{ w.print(); }catch(_){ }
+  }catch(_){ }
+};
+try{
+  // srcdoc is more reliable than document.write in many WebViews
+  if("srcdoc" in e){
+    e.onload=()=>{ i(); };
+    e.srcdoc=t;
+    // Fallback in case onload doesn't fire
+    setTimeout(()=>{ i(); },900);
+  }else{
+    e.onload=()=>{ i(); };
+    const a=e.contentWindow.document;
+    a.open();a.write(t);a.close();
+    setTimeout(()=>{ i(); },900);
+  }
+}catch(_){
+  try{
+    const a=e.contentWindow.document;
+    a.open();a.write(t);a.close();
+  }catch(__){ }
+  setTimeout(()=>{ i(); },900);
+}}catch(t){r("⚠️ تعذر فتح نافذة الطباعة/PDF")}}function f(t,e,n){try{const a=t=>String(null==t?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;"),r=`<Row>${(e||[]).map(t=>`<Cell ss:StyleID="hdr"><Data ss:Type="String">${a(t)}</Data></Cell>`).join("")}</Row>`,i=`<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"\n xmlns:o="urn:schemas-microsoft-com:office:office"\n xmlns:x="urn:schemas-microsoft-com:office:excel"\n xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"\n xmlns:html="http://www.w3.org/TR/REC-html40"><Styles><Style ss:ID="hdr"><Font ss:Bold="1"/><Interior ss:Color="#F3F4F6" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style><Style ss:ID="cell"><Alignment ss:Horizontal="Right" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style></Styles><Worksheet ss:Name="السجلات"><Table>${r}${(n||[]).map(t=>`<Row>${(t||[]).map(t=>`<Cell ss:StyleID="cell"><Data ss:Type="String">${a(t)}</Data></Cell>`).join("")}</Row>`).join("")}</Table><WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><DisplayRightToLeft/></WorksheetOptions></Worksheet></Workbook>`,s=new Blob(["\ufeff",i],{type:"application/vnd.ms-excel;charset=utf-8;"}),d=document.createElement("a");try{if(window.TAIFNative&&window.TAIFNative.shareTextFile){window.TAIFNative.shareTextFile("\ufeff"+i,"application/vnd.ms-excel;charset=utf-8;",t||"export.xml");return}}catch(_){};d.href=URL.createObjectURL(s),d.download=t||"export.xml",document.body.appendChild(d),d.click(),setTimeout(()=>{try{URL.revokeObjectURL(d.href)}catch(t){}try{d.remove()}catch(t){}},0)}catch(t){r("⚠️ تعذر تصدير ملف Excel")}}function y(t){const e=function(){try{const t=u(l);return(Array.isArray(t.fields)?t.fields:Array.isArray(p)?p:[]).filter(t=>t&&!1!==t.enabled)}catch(t){return(Array.isArray(p)?p:[]).filter(t=>t&&!1!==t.enabled)}}(),n=[];for(const t of e){const e=String(t.key||"").trim();if(!e||"name"===e||"phone"===e||"note"===e)continue;const a=String(t.label||e).trim();a&&!n.includes(a)&&n.push(a)}const a=(t||[]).map(t=>{const K=(t&&t.extra&&(t.extra.kind||t.extra.mode||t.extra.__kind))||t.trade_type,n="sell"===K?"سعر المبيع":"buy"===K?"سعر الشراء":"exchange"===K?"استبدال":K,a=t.extra&&t.extra.fields?t.extra.fields:{},r=[t.seq??"",t.trade_day||"",n||"",t.currency_code||"",t.amount_get??"",t.rate??"",t.amount_pay??"",t.pay_currency_code||"",t.actor_username||"",t.note||"",a.name||"",a.phone||""];for(const t of e){const e=String(t.key||"").trim();if(!e||"name"===e||"phone"===e||"note"===e)continue;const n=String(t.label||e).trim();r.push(a[e]??a[n]??"")}return r});return{headers:["رقم العملية","التاريخ","النوع","أسعار صرف العملات","المبلغ","سعر التحويل","الإجمالي","عملة الدفع","المنفذ","ملاحظة","الاسم","الرقم"].concat(n),rows:a}}function w(t){const e=y(t);!function(t,e,n){try{if(!window.XLSX)return f(String(t||"export.xlsx").replace(/\.xlsx$/i,".xml"),e,n);const a=[e].concat(n||[]),r=XLSX.utils.aoa_to_sheet(a),i=(e||[]).length,s=[];for(let t=0;t<i;t++){let a=String(e[t]??"").length;for(let e=0;e<Math.min((n||[]).length,80);e++){const r=n[e]&&null!=n[e][t]?String(n[e][t]):"";r.length>a&&(a=r.length)}s.push({wch:Math.min(Math.max(a+2,10),42)})}r["!cols"]=s;const d=XLSX.utils.book_new();d.Workbook={Views:[{RTL:!0}]},XLSX.utils.book_append_sheet(d,r,"السجل");const o=String(t||"سجل_السعر المبيع_والسعر الشراء.xlsx").replace(/\.(xls|xml)$/i,"").replace(/\s+/g,"_")+".xlsx";if(window.TAIFNative&&window.TAIFNative.shareBase64File){try{const b64=XLSX.write(d,{bookType:"xlsx",type:"base64",compression:!0});window.TAIFNative.shareBase64File(b64,"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",o);return}catch(_){} }XLSX.writeFile(d,o,{compression:!0})}catch(t){r("⚠️ تعذر تصدير ملف Excel")}}(`سجل_السعر المبيع_والسعر الشراء_${d.from||s}_الى_${d.to||s}.xlsx`,e.headers,e.rows),r("✅ تم تصدير ملف Excel")}function _(t){const e=t=>String(null==t?"":t).replace(/[&<>"']/g,t=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[t])),n=t=>{try{if(null==t||""===t)return"";const e=Number(String(t).replace(/,/g,""));return isFinite(e)?e.toLocaleString("en-US"):String(t)}catch(e){return String(t||"")}};let a="",r="";try{a=localStorage.getItem("taif:logo")||""}catch(t){}try{r="شركة طيف للصرافة والحوالات"}catch(t){}const i=function(){try{const t=u(l);return(Array.isArray(t.fields)?t.fields:Array.isArray(p)?p:[]).filter(t=>t&&!1!==t.enabled)}catch(t){return(Array.isArray(p)?p:[]).filter(t=>t&&!1!==t.enabled)}}();return`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>\n<title>PDF</title>\n<style>\n:root{\n --paper:80mm;\n --w:72mm;\n --pad:2.2mm;\n --ink:#0b1220;\n --muted:#0f172a;\n --muted2:#475569;\n}\n*{box-sizing:border-box}\nhtml,body{margin:0;padding:0;background:#fff;color:var(--ink);font-family:Tahoma,system-ui,Segoe UI,Roboto,Arial;-webkit-print-color-adjust:exact;print-color-adjust:exact}\n.paper{width:var(--w);margin:0 auto;padding:var(--pad);page-break-after:always}\n.paper:last-child{page-break-after:auto}\n.card{border:1px solid rgba(15,23,42,.14);border-radius:14px;padding:10px 10px}\n.head{\n display:flex;\n align-items:center;\n justify-content:center;\n gap:8px;\npadding:8px 8px;border:1px solid rgba(15,23,42,.06);border-radius:12px;background:rgba(15,23,42,.02)}\n.brand{display:flex;align-items:center;justify-content:center;gap:8px;min-width:0;width:100%;flex-direction:column}\n\n.brand img{width:34px;height:34px;border-radius:10px;object-fit:contain;border:1px solid rgba(15,23,42,.10);background:#fff}\n.brand .t{\n font-weight:1000;\n font-size:18px;\n line-height:1.15;\n white-space:normal;\n overflow:visible;\n text-overflow:clip;\n max-width:100%;\n text-align:center;\n direction:rtl;\n unicode-bidi:plaintext;\n}\n\n.sec{margin-top:8px}\n.h{font-weight:1000;font-size:11px;color:var(--muted2);margin:0 0 4px 0;display:flex;align-items:center;justify-content:space-between}\n.hr{height:1px;background:rgba(15,23,42,.10);margin:7px 0}\n.row{display:grid;grid-template-columns:1fr 1.15fr;gap:8px;padding:4.5px 0;border-bottom:1px solid rgba(15,23,42,.07);align-items:start}\n.row:last-child{border-bottom:0}\n.k{font-weight:1000;color:var(--muted);font-size:12px;line-height:1.2;text-align:right;direction:rtl;unicode-bidi:plaintext;overflow-wrap:anywhere}\n.v{font-weight:1000;font-size:12.3px;line-height:1.2;text-align:left;direction:ltr;unicode-bidi:isolate;overflow-wrap:anywhere}\n.v.rtl{direction:rtl;text-align:right;unicode-bidi:plaintext}\n.v.nowrap{white-space:nowrap !important}\n.big .v{font-size:13.2px}\n.totals{border:1px dashed rgba(15,23,42,.18);border-radius:12px;padding:7px 8px;background:rgba(15,23,42,.015)}\n.totals .row{border-bottom:1px dashed rgba(15,23,42,.12)}\n.totals .row:last-child{border-bottom:0}\n.totals .row.big{padding-top:5px;padding-bottom:5px}\n.totals .row.big .k{font-size:12.2px}\n.totals .row.big .v{font-size:13.6px}\n\n\n.clientbox{border:1px solid rgba(15,23,42,.28);border-radius:12px;overflow:hidden;background:#fff}\n.clientbox .row{border-bottom:1px solid rgba(15,23,42,.22);padding:0;margin:0;grid-template-columns:44% 56%}\n.clientbox .row:last-child{border-bottom:0}\n.clientbox .k{padding:7px 8px;border-left:1px solid rgba(15,23,42,.22);background:rgba(15,23,42,.03)}\n.clientbox .v{padding:7px 8px}\n\n@page{size:A5;margin:10mm}@media print{html,body{margin:0;padding:0;width:auto;max-width:none}.paper{width:100%;max-width:none;margin:0;padding:0;page-break-after:always}.paper:last-child{page-break-after:auto}.card{border:0;border-radius:0;padding:0}.head{border:0;border-radius:0;padding:0 0 6px 0;background:transparent}}\n</style>
 
 
 <style id="rate-align-adjust">
@@ -2533,6 +2681,8 @@ const o=()=>{s.innerHTML=`\n    <div class="trade-head"><button class="trade-bac
   
   // Remote logout enforcement: if session key is deleted/changed in DB, log this device out automatically.
   (function bindRemoteLogoutWatcher(){
+    // ✅ Disabled (طلب العميل): منع تسجيل الخروج التلقائي — يبقى الدخول ثابت إلا عند خروج يدوي أو حذف/إيقاف الحساب.
+    return;
     // IMPORTANT: $db.onValue can briefly return null on network hiccups or transient query errors.
     // We must NOT force logout on the first null snapshot.
     try{
@@ -3188,21 +3338,37 @@ document.addEventListener("click", function(ev){
       var bid = getBid();
       var stored = (raw==="emergency") ? raw : (bid + "::" + raw);
 
-      // Try both (legacy + branch-prefixed)
+      // Try both (legacy + branch-prefixed) — BUT DO NOT logout on transient errors.
       var row = null;
+      var rows = null;
       try{
-        var r1 = await supa.from("users").select("*").in("username",[stored, raw]).maybeSingle();
-        row = (r1 && r1.data) ? r1.data : null;
-      }catch(_){ row = null; }
+        var r1 = await supa.from("users")
+          .select("username,name,role")
+          .in("username",[stored, raw]);
+        if(r1 && r1.error){
+          // network / RLS / transient error => keep session (no forced logout)
+          return;
+        }
+        rows = (r1 && r1.data) ? r1.data : [];
+      }catch(_){
+        // transient error => keep session
+        return;
+      }
+      if(rows && Array.isArray(rows) && rows.length){
+        // prefer branch-prefixed row when exists
+        row = rows.find(function(x){ return x && x.username===stored; }) || rows[0];
+      }else{
+        row = null;
+      }
 
       // If missing or banned => force logout & clear locks
-      if(!row || row.banned){
+      if(!row){
         try{
           clearLocal();
           await clearServerLocks(raw);
         }catch(_){}
         try{
-          var msg = row && row.banned ? "⛔ حسابك موقّف — تم تسجيل الخروج" : "🚪 هذا الحساب غير موجود (محذوف) — تم تسجيل الخروج";
+          var msg = "🚪 هذا الحساب غير موجود (محذوف) — تم تسجيل الخروج";
           try{ alert(msg); } catch(_){}
         }catch(_){}
         try{ location.reload(); }catch(_){}
