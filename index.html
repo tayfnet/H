@@ -312,7 +312,210 @@
 })();
 </script>
 
-<div class="bg-fixed-gradient bg-gradient-to-tr from-cyan-200 via-white to-cyan-200" id="bgfix"></div><div id="root"></div><script crossorigin="" defer="" src="https://unpkg.com/react@18/umd/react.production.min.js"></script><script crossorigin="" defer="" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script><script>!function(){const t=window.supabase?(window.__TAIF_SUPA__||(window.__TAIF_SUPA__=window.supabase.createClient("https://rzabluqawcyhedcvmyut.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YWJsdXFhd2N5aGVkY3ZteXV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExODMxMTQsImV4cCI6MjA4Njc1OTExNH0.EWbcZ4jliSKtlY3rk303EkcUfNDqJhOKDRAP2kxPCxE",{realtime:{params:{eventsPerSecond:3}}}))):null,e=new Map,n=new Map;function a(t){try{const e=n.get(t);e&&(clearInterval(e),n.delete(t))}catch(t){}}async function i(e,n){await t.from("app_state").upsert([{key:e,value:n}],{onConflict:"key"})}function s(e,n,a,i){const s=`realtime_${e}_${i||"all"}`,c=t.channel(s).on("postgres_changes",{event:"*",schema:"public",table:e,filter:n},async()=>{try{await a()}catch(t){}});c.subscribe();try{a&&a()}catch(t){}return c}const c={ref:t=>({key:t}),async set(e,n){const a="string"==typeof e?e:e&&e.key;if(a){if(a.startsWith("taif/users/")){const e=a.split("/")[2];if(null==n)return void await t.from("users").delete().eq("username",e);const i=Object.assign({username:e},n||{});return void await t.from("users").upsert([i],{onConflict:"username"})}if(null==n){if("taif/adminactionslog"===a)return;try{await t.from("app_state").delete().eq("key",a)}catch(_){ }return}"taif/users"!==a&&("taif/adminactionslog"!==a||null!=n?a.startsWith("taif/adminactionslog/")?await i(a,n||{}):"taif/base"===a&&n&&"object"==typeof n&&n.date&&n.base?await i("taif/base",n):await i(a,n):null)}},onValue(i,c){const o="string"==typeof i?i:i&&i.key;if(!o)return null;let r=null;const l=async()=>{try{let e;e="taif/users"===o?await async function(){const{data:e}=await t.from("users").select("*"),n={};return(e||[]).forEach(t=>{n[t.username]=t}),n}():o.startsWith("taif/adminactionslog")?await async function(){return {}}():await async function(e){const{data:n,error:a}=await t.from("app_state").select("value").eq("key",e).maybeSingle();return a?null:n&&"value"in n?n.value:null}(o);const n=JSON.stringify(e);n!==r&&(r=n,c(function(t){return{val:()=>t}}(e)))}catch(t){}};let u;(async()=>{await l()})(),u="taif/users"===o?s("users",void 0,l,"users"):o.startsWith("taif/adminactionslog")?null:s("app_state",`key=eq.${o}`,l,o),e.set(o,u);try{const t=()=>{const t=("taif/users"===o)?("undefined"!=typeof document&&"hidden"===document.visibilityState?8e3:2e3):("undefined"!=typeof document&&"hidden"===document.visibilityState?3e4:7e3);a(o);const e=setInterval(()=>{l()},t);n.set(o,e)};t();const e=()=>{t()};"undefined"!=typeof document&&document.addEventListener("visibilitychange",e),u&&(u.__visHandler=e)}catch(t){}return u},off(n){const i="string"==typeof n?n:n&&n.key,s=e.get(i);if(s){try{t.removeChannel(s)}catch(t){}try{s.__visHandler&&"undefined"!=typeof document&&(document.removeEventListener("visibilitychange",s.__visHandler),s.__visHandler=null)}catch(t){}e.delete(i)}a(i)}};window.$db=c,window.dispatchEvent(new Event("db-ready"))}();</script>
+<div class="bg-fixed-gradient bg-gradient-to-tr from-cyan-200 via-white to-cyan-200" id="bgfix"></div><div id="root"></div><script crossorigin="" defer="" src="https://unpkg.com/react@18/umd/react.production.min.js"></script><script crossorigin="" defer="" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script><script>
+(function(){
+  const supa = window.supabase
+    ? (window.__TAIF_SUPA__ || (window.__TAIF_SUPA__ = window.supabase.createClient(
+        "https://rzabluqawcyhedcvmyut.supabase.co",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YWJsdXFhd2N5aGVkY3ZteXV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExODMxMTQsImV4cCI6MjA4Njc1OTExNH0.EWbcZ4jliSKtlY3rk303EkcUfNDqJhOKDRAP2kxPCxE",
+        { realtime: { params: { eventsPerSecond: 3 } } }
+      )))
+    : null;
+
+  const channelsByKey = new Map();
+  const pollersByKey = new Map();
+  let channelSeq = 0;
+
+  function refKey(refOrPath){
+    return typeof refOrPath === "string" ? refOrPath : (refOrPath && refOrPath.key);
+  }
+
+  function clearPoller(key){
+    try{
+      const id = pollersByKey.get(key);
+      if(id){
+        clearInterval(id);
+        pollersByKey.delete(key);
+      }
+    }catch(_){ }
+  }
+
+  function clearChannel(key){
+    try{
+      const ch = channelsByKey.get(key);
+      if(!ch) return;
+      try{
+        if(ch.__visHandler && typeof document !== "undefined"){
+          document.removeEventListener("visibilitychange", ch.__visHandler);
+          ch.__visHandler = null;
+        }
+      }catch(_){ }
+      try{ supa && supa.removeChannel && supa.removeChannel(ch); }catch(_){ }
+      channelsByKey.delete(key);
+    }catch(_){ }
+  }
+
+  function snapshot(value){
+    return { val: function(){ return value; } };
+  }
+
+  async function upsertAppState(key, value){
+    if(!supa) return;
+    await supa.from("app_state").upsert([{ key:key, value:value }], { onConflict:"key" });
+  }
+
+  async function readAppState(key){
+    if(!supa) return null;
+    const { data, error } = await supa.from("app_state").select("value").eq("key", key).maybeSingle();
+    if(error) return null;
+    return data && Object.prototype.hasOwnProperty.call(data, "value") ? data.value : null;
+  }
+
+  async function readUsers(){
+    if(!supa) return {};
+    const { data } = await supa.from("users").select("*");
+    const out = {};
+    (data || []).forEach(function(row){
+      if(row && row.username) out[row.username] = row;
+    });
+    return out;
+  }
+
+  function makeChannel(table, filter, refresh, keyHint){
+    if(!supa || !supa.channel) return null;
+    const channelName = "realtime_" + table + "_" + String(keyHint || "all").replace(/[^a-zA-Z0-9_:\/-]/g, "_") + "_" + (++channelSeq);
+    try{
+      const ch = supa.channel(channelName);
+      ch.on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: table,
+        filter: filter
+      }, async function(){
+        try{ await refresh(); }catch(_){ }
+      });
+      ch.subscribe();
+      try{ refresh(); }catch(_){ }
+      return ch;
+    }catch(err){
+      try{ console.error(err); }catch(_){ }
+      return null;
+    }
+  }
+
+  function startPoller(key, refresh, isUsers){
+    try{
+      const arm = function(){
+        const wait = isUsers
+          ? ((typeof document !== "undefined" && document.visibilityState === "hidden") ? 8000 : 2000)
+          : ((typeof document !== "undefined" && document.visibilityState === "hidden") ? 30000 : 7000);
+        clearPoller(key);
+        const id = setInterval(function(){ try{ refresh(); }catch(_){ } }, wait);
+        pollersByKey.set(key, id);
+      };
+      arm();
+      const visHandler = function(){ arm(); };
+      if(typeof document !== "undefined") document.addEventListener("visibilitychange", visHandler);
+      const ch = channelsByKey.get(key);
+      if(ch) ch.__visHandler = visHandler;
+    }catch(_){ }
+  }
+
+  const db = {
+    ref: function(path){ return { key:path }; },
+
+    set: async function(refOrPath, value){
+      const key = refKey(refOrPath);
+      if(!key || !supa) return;
+
+      if(key.startsWith("taif/users/")){
+        const username = key.split("/")[2];
+        if(value == null){
+          await supa.from("users").delete().eq("username", username);
+          return;
+        }
+        const row = Object.assign({ username:username }, value || {});
+        await supa.from("users").upsert([row], { onConflict:"username" });
+        return;
+      }
+
+      if(value == null){
+        if(key === "taif/adminactionslog") return;
+        try{ await supa.from("app_state").delete().eq("key", key); }catch(_){ }
+        return;
+      }
+
+      if(key === "taif/users") return;
+
+      if(key === "taif/adminactionslog"){
+        if(value != null) await upsertAppState(key, value || {});
+        return;
+      }
+
+      if(key.startsWith("taif/adminactionslog/")){
+        await upsertAppState(key, value || {});
+        return;
+      }
+
+      if(key === "taif/base" && value && typeof value === "object" && value.date && value.base){
+        await upsertAppState("taif/base", value);
+        return;
+      }
+
+      await upsertAppState(key, value);
+    },
+
+    onValue: function(refOrPath, callback){
+      const key = refKey(refOrPath);
+      if(!key || !callback) return null;
+
+      clearChannel(key);
+      clearPoller(key);
+
+      let lastSerialized = null;
+
+      const refresh = async function(){
+        try{
+          let value;
+          if(key === "taif/users"){
+            value = await readUsers();
+          }else if(key.startsWith("taif/adminactionslog")){
+            value = {};
+          }else{
+            value = await readAppState(key);
+          }
+
+          const nextSerialized = JSON.stringify(value);
+          if(nextSerialized !== lastSerialized){
+            lastSerialized = nextSerialized;
+            callback(snapshot(value));
+          }
+        }catch(_){ }
+      };
+
+      try{ refresh(); }catch(_){ }
+
+      const channel = key === "taif/users"
+        ? makeChannel("users", undefined, refresh, "users")
+        : (key.startsWith("taif/adminactionslog") ? null : makeChannel("app_state", "key=eq." + key, refresh, key));
+
+      if(channel) channelsByKey.set(key, channel);
+      startPoller(key, refresh, key === "taif/users");
+      return channel;
+    },
+
+    off: function(refOrPath){
+      const key = refKey(refOrPath);
+      if(!key) return;
+      clearChannel(key);
+      clearPoller(key);
+    }
+  };
+
+  window.$db = db;
+  window.dispatchEvent(new Event("db-ready"));
+})();
+</script>
 <script id="branch-multi-tenant-v1">
 (function(){
   // ===== Branch (multi-tenant) layer =====
